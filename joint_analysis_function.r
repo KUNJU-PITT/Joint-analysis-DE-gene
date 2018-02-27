@@ -112,3 +112,36 @@ joint_analysis_zscore<-function(ztable,df_fit=8){
   #plot(likelihood_increase,xlab = "iteration",ylab="log likelihood")
   return(list("joint"=mar,"single"=single,"piout"=pioutput,"status_matrix"=status))
 }
+#one iteration of EM algorithm defined here
+myiteration <- function(pivec, tol=.0001,N=no_genes,N_dis,likelihood,status_matrix){#perform one single iteration to update the pivec through EM algorithm
+  #This function computes one update of EM algorithm of prior probability
+  #pivec is the prior probability we want to estimate based on all observed z-scores
+  #First compute posterior probability for EACH gene based on the observed Z-score in each dataset and pivec of each iteration
+  #i.e. Pr(D1=1,D2=0|Z1,Z2,pivec) or Pr(D1=0,D2=1|Z1,Z2,pivec) for gene i,this is the E-step
+  #Then form of M-step is derived as well
+  #E-step
+  #what is likelihood object:f(Z1=z1|D1)*f(Z2=z2|D2), conditional joint density pre-computed given observed Z1 and Z2
+  #what is likelihoodnew: i.e. f(Z1,Z2|D1=1,D2=0)*pi(D1=1,D2=0), each row is a gene, and contains all 2^d situations
+  #here pivec is the estimated value in last iteration
+  likelihoodnew <- likelihood*matrix(rep(pivec,N),byrow=TRUE,nrow=N)#based on estimated prior probability of each iteration, calculate f(Z1,Z2|D1,D2)*pivec  
+  #Posterior probability based on pivec: i.e. Pr(D1=1,D2=0|Z1,Z2,pivec) for each column
+  conditionalprobsnew <- likelihoodnew/apply(likelihoodnew,1,sum)#compute the posterior probability for each gene (row)
+  #marginalprobsnew contains Pr(Dn=1|Z1,Z2...Zn) for each gene in each disease dataset, this is the inference results
+  marginalprobsnew <- matrix(0, nrow=N, ncol=N_dis)
+  #calculate the marginal posterior probability: e.g. Pr(D1=1|Z1,Z2)=Pr(D1=1,D2=0|Z1,Z2)+Pr(D1=1,D2=1|Z1,Z2) for each gene
+  for(j in 1:N_dis){
+    marginalprobsnew[,j] <- apply(conditionalprobsnew[,status_matrix[,j]==1],1,sum)#marginalprobsnew is the output
+  }
+  #M-step
+  #The maximizer of the log expectation function is found to be the average of the posterior probability for each gene after we observe Z. i.e. Average(Pr(Di=1|Z,old parameter))
+  #This maximizer was found by Langrange multiplier
+  pivecnew <- (1/N)*apply(conditionalprobsnew,2,sum)#update the prior probability, average over all genes, "2" means by average by column (gene)
+  stopyn = "n"
+  #output the new likelihood value of all observed sample values after prior probaility is updated
+  #to validate if the updated prior probability increase the total likelihood
+  new_sample_likelihood=likelihood*matrix(rep(pivec,N),byrow=TRUE,nrow=N)
+  new_sample_loglikelihood=log(apply(new_sample_likelihood,1,sum))
+  new_total_likelihood=sum(new_sample_loglikelihood)
+  if(max(abs(pivec - pivecnew))<tol) stopyn = "y"
+  return(list(new_total_likelihood=new_total_likelihood,likelihoodnew=likelihoodnew,conditionalprobs= conditionalprobsnew, marginalprobs=marginalprobsnew, pivec = pivecnew, stopyn = stopyn))
+}
